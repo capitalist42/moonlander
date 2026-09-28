@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "capitalist42.moonlander",
+  "name": "Moonlander",
+  "version": "1.0.0",
+  "author": "capitalist42",
+  "license": "MIT",
+  "description": "Read the layout flashed on a ZSA Moonlander, edit it, compile it, and flash it back.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Moonlander",
+    "description": "Moonlander layout editor",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
