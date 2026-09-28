@@ -29,14 +29,52 @@ test("Jal4PQ key legends match the board, and every key index is drawn once", ()
   assert.ok(grave.sub.includes("~"), "the grave key's shifted legend is tilde")
 
   const seen = {}
-  Model.ROWS.forEach((row) => {
-    row.left.concat(row.right).forEach((index) => {
-      seen[index] = true
-    })
+  Model.KEYS.forEach((key) => {
+    seen[key.index] = true
   })
-  assert.equal(Object.keys(seen).length, 72, "the drawn rows cover all 72 keys")
-  assert.equal(Model.ROWS[4].right[0], 68, "the right thumb cluster starts at key 68")
+  assert.equal(Object.keys(seen).length, 72, "the board draws all 72 keys")
+  assert.equal(Model.KEYS.length, 72, "there is one position per key")
   assert.equal(Model.MAX_LAYERS, 8, "the editor allows the same eight layers as the firmware")
+})
+
+test("key positions follow the Moonlander shape", () => {
+  const keys = Model.KEYS
+  keys.forEach((key, index) => {
+    assert.equal(key.index, index, "key " + index + " keeps its layout index")
+  })
+
+  assert.equal(keys[3].y, 0, "the middle column is the highest point of the arc")
+  assert.equal(keys[0].y, 0.28, "the outer column sits below the middle column")
+  assert.ok(keys[2].y < keys[0].y, "the columns rise toward the middle")
+  assert.equal(keys[6].x, 6, "the left inner column is the last finger column")
+  assert.equal(keys[20].x, 6, "the left inner column stops after three keys")
+  assert.ok(keys[20].y < keys[26].y, "the column beside it continues one row lower")
+
+  assert.equal(keys[32].shape, "launch", "the left thumb cluster is capped by the wide red key")
+  assert.ok(keys[32].w > 2, "that red key is wider than a piano key")
+  assert.ok(keys[32].r > 0, "the left thumb cluster turns toward the center")
+  assert.equal(keys[33].h, 1.15, "the piano keys are tall")
+  assert.equal(keys[34].r, keys[32].r, "the piano keys turn with the red key")
+  assert.equal(keys[35].r, keys[32].r, "every left thumb key shares that turn")
+  const leftOuter = Model.rotatedBounds(keys[33])
+  const leftInner = Model.rotatedBounds(keys[35])
+  assert.ok(leftInner.minY > leftOuter.minY, "the inner piano key sits lower, toward the center")
+
+  assert.equal(keys[68].shape, "launch", "the right thumb cluster is capped by the wide red key")
+  assert.equal(keys[68].r, -keys[32].r, "the right cluster turns the other way")
+  assert.equal(keys[71].h, 1.15, "the right piano keys are tall")
+  const rightOuter = Model.rotatedBounds(keys[71])
+  const rightInner = Model.rotatedBounds(keys[69])
+  assert.ok(rightInner.minY > rightOuter.minY, "the inner right piano key sits lower, toward the center")
+
+  assert.equal(keys[42].y, keys[0].y, "the two outer corners sit at the same height")
+  assert.ok(keys[42].x > keys[6].x + 8, "the halves stay apart")
+  keys.forEach((key) => {
+    const bounds = Model.rotatedBounds(key)
+    assert.ok(bounds.minX >= -0.01, "key " + key.index + " stays on the board")
+    assert.ok(bounds.maxX <= Model.BOARD_WIDTH + 0.01, "key " + key.index + " stays inside the width")
+    assert.ok(bounds.maxY <= Model.BOARD_HEIGHT + 0.01, "key " + key.index + " stays inside the height")
+  })
 })
 
 test("the key catalog offers letters, function keys, and digits in typing order", () => {

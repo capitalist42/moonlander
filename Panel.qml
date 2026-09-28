@@ -406,15 +406,17 @@ Panel {
       onTabRequested: function(direction) { root.switchPanel(direction) }
 
       Flickable {
+        id: scroller
         anchors.fill: parent
-        contentWidth: body.width
+        contentWidth: width
         contentHeight: body.implicitHeight
         clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        interactive: contentHeight > height
 
         Column {
           id: body
-          width: panel.contentWidth - Style.space(16)
-          x: Style.space(8)
+          width: scroller.width
           spacing: Style.space(8)
 
           Text {

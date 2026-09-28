@@ -1,13 +1,134 @@
 // Legends and geometry for the Moonlander board. No Qt dependencies.
+//
+// The keywell is the columnar arc: the middle column is highest and the
+// inner columns are shorter. Each thumb cluster is turned toward the center.
+// A wide key sits over three piano keys. Coordinates are key units.
+// r is degrees clockwise around (ox, oy). The right half mirrors the left.
 
-var ROWS = [
-  { left: [0, 1, 2, 3, 4, 5, 6], right: [36, 37, 38, 39, 40, 41, 42] },
-  { left: [7, 8, 9, 10, 11, 12, 13], right: [43, 44, 45, 46, 47, 48, 49] },
-  { left: [14, 15, 16, 17, 18, 19, 20], right: [50, 51, 52, 53, 54, 55, 56] },
-  { left: [21, 22, 23, 24, 25, 26], right: [57, 58, 59, 60, 61, 62] },
-  { left: [27, 28, 29, 30, 31, 32], right: [68, 63, 64, 65, 66, 67] },
-  { left: [33, 34, 35], right: [69, 70, 71] }
-]
+var BOARD_WIDTH = 20.8
+
+// Column tops, in key units below the highest column. Measured from the
+// Oryx board: the middle column is highest, and the drop grows toward
+// the outer and inner edges.
+var LEFT_DROP = [0.28, 0.18, 0.14, 0, 0.14, 0.18, 0.28]
+var LEFT_ROWS = [5, 5, 5, 5, 5, 4, 3]
+var CLUSTER_ANGLE = 24
+
+function moonlanderKeys() {
+  var keys = new Array(72)
+  function put(index, x, y, w, h, r, ox, oy, shape) {
+    keys[index] = {
+      index: index,
+      x: x,
+      y: y,
+      w: w,
+      h: h,
+      r: r || 0,
+      ox: ox === undefined ? x : ox,
+      oy: oy === undefined ? y : oy,
+      shape: shape || "key"
+    }
+  }
+
+  var left = 0
+  var row
+  var col
+  for (row = 0; row < 5; row++) {
+    for (col = 0; col < 7; col++) {
+      if (row >= LEFT_ROWS[col]) continue
+      put(left, col, row + LEFT_DROP[col], 1, 1)
+      left = left + 1
+    }
+  }
+
+  var rightStart = [36, 43, 50, 57, 63]
+  for (row = 0; row < 5; row++) {
+    var placed = 0
+    for (col = 6; col >= 0; col--) {
+      if (row >= LEFT_ROWS[col]) continue
+      put(rightStart[row] + placed, BOARD_WIDTH - col - 1, row + LEFT_DROP[col], 1, 1)
+      placed = placed + 1
+    }
+  }
+
+  // Left cluster, upright, then turned clockwise around the wide key so the
+  // piano row drops toward the center. The wide key sits on the three keys
+  // beneath it, just clear of the inner column, the way Oryx draws it.
+  var hx = 7.05
+  var hy = 3.88
+  var hw = 2.2
+  var hh = 1.18
+  var ox = hx + hw / 2
+  var oy = hy + hh / 2
+  put(32, hx, hy, hw, hh, CLUSTER_ANGLE, ox, oy, "launch")
+  var py = hy + hh + 0.05
+  var ph = 1.15
+  var pw = 1.05
+  var gap = 0.08
+  var px0 = ox - (3 * pw + 2 * gap) / 2
+  put(33, px0, py, pw, ph, CLUSTER_ANGLE, ox, oy)
+  put(34, px0 + pw + gap, py, pw, ph, CLUSTER_ANGLE, ox, oy)
+  put(35, px0 + 2 * (pw + gap), py, pw, ph, CLUSTER_ANGLE, ox, oy)
+
+  var thumbMirror = { 32: 68, 33: 71, 34: 70, 35: 69 }
+  var source
+  for (source in thumbMirror) {
+    var from = keys[source]
+    put(
+      thumbMirror[source],
+      BOARD_WIDTH - from.x - from.w,
+      from.y,
+      from.w,
+      from.h,
+      -from.r,
+      BOARD_WIDTH - from.ox,
+      from.oy,
+      from.shape
+    )
+  }
+  return keys
+}
+
+function rotatedBounds(key) {
+  var angle = (key.r || 0) * Math.PI / 180
+  var cos = Math.cos(angle)
+  var sin = Math.sin(angle)
+  var corners = [
+    [key.x, key.y],
+    [key.x + key.w, key.y],
+    [key.x + key.w, key.y + key.h],
+    [key.x, key.y + key.h]
+  ]
+  var minX = Infinity
+  var minY = Infinity
+  var maxX = -Infinity
+  var maxY = -Infinity
+  var i
+  for (i = 0; i < corners.length; i++) {
+    var dx = corners[i][0] - key.ox
+    var dy = corners[i][1] - key.oy
+    var x = key.ox + dx * cos - dy * sin
+    var y = key.oy + dx * sin + dy * cos
+    if (x < minX) minX = x
+    if (y < minY) minY = y
+    if (x > maxX) maxX = x
+    if (y > maxY) maxY = y
+  }
+  return { minX: minX, minY: minY, maxX: maxX, maxY: maxY }
+}
+
+function boardHeight(keys) {
+  var bottom = 0
+  var i
+  for (i = 0; i < keys.length; i++) {
+    var bounds = rotatedBounds(keys[i])
+    if (bounds.maxY > bottom) bottom = bounds.maxY
+  }
+  return Math.ceil(bottom * 20) / 20
+}
+
+var KEYS = moonlanderKeys()
+var BOARD_HEIGHT = boardHeight(KEYS)
 
 var MAX_LAYERS = 8
 
@@ -254,7 +375,10 @@ function removeLayer(layers, index) {
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
-    ROWS: ROWS,
+    KEYS: KEYS,
+    BOARD_WIDTH: BOARD_WIDTH,
+    BOARD_HEIGHT: BOARD_HEIGHT,
+    rotatedBounds: rotatedBounds,
     MAX_LAYERS: MAX_LAYERS,
     catalog: catalog,
     legend: legend,
