@@ -35,6 +35,7 @@ Panel {
   property bool flashArmed: false
   property bool restoreArmed: false
   property int nameRevision: 0
+  property bool draftSaveFailed: false
 
   readonly property bool unflashed: keyboardSnapshot === "" ? !matchesKeyboard : JSON.stringify(layers) !== keyboardSnapshot
   readonly property var filteredCodes: {
@@ -157,14 +158,28 @@ Panel {
     touch()
   }
 
-  function saveDraft() {
-    if (!hostWidget) return
+  function writeDraft() {
+    if (!hostWidget) return false
     var next = Model.clone(root.doc || {})
     next.layers = Model.clone(root.layers)
     next.matchesKeyboard = JSON.stringify(root.layers) === root.keyboardSnapshot && root.keyboardSnapshot !== ""
+    // A failed write leaves the new text in FileView's cache, and setText
+    // then skips the write. Clear the path so the retry is a real save.
+    if (root.draftSaveFailed) draftFile.path = ""
+    root.draftSaveFailed = false
     draftFile.path = hostWidget.draftPath
     draftFile.setText(JSON.stringify(next, null, 2) + "\n")
+    draftFile.waitForJob()
+    if (root.draftSaveFailed) return false
     root.doc = next
+    return true
+  }
+
+  function saveDraft() {
+    if (!writeDraft()) {
+      if (hostWidget) root.status = "Could not save the draft."
+      return
+    }
     root.status = "Saved. The keyboard is unchanged until you flash."
   }
 
@@ -177,7 +192,11 @@ Panel {
   }
 
   function compile() {
-    saveDraft()
+    if (!hostWidget || root.busy) return
+    if (!writeDraft()) {
+      root.status = "Could not save the draft."
+      return
+    }
     root.status = "Compiling. The first build takes several minutes."
     runTool(compileProc, ["compile", "--draft", hostWidget.draftPath])
   }
@@ -190,7 +209,10 @@ Panel {
       return
     }
     root.flashArmed = false
-    saveDraft()
+    if (!writeDraft()) {
+      root.status = "Could not save the draft."
+      return
+    }
     root.status = "Waiting for the bootloader. Press the reset pinhole and leave the cable in."
     runTool(flashProc, ["flash", "--draft", hostWidget.draftPath, "--yes"])
   }
@@ -238,12 +260,15 @@ Panel {
       root.status = "Layer 0 stays."
       return
     }
-    var next = Model.clone(root.layers)
-    next.splice(root.layerIndex, 1)
+    var removed = root.layerIndex
+    var next = Model.removeLayer(root.layers, removed)
     root.layers = next
-    root.layerIndex = Math.max(0, root.layerIndex - 1)
-    if (root.targetLayer >= next.length) root.targetLayer = Math.max(0, next.length - 1)
+    root.layerIndex = Math.max(0, removed - 1)
+    if (root.targetLayer === removed) root.targetLayer = Math.max(0, next.length - 1)
+    else if (root.targetLayer > removed) root.targetLayer = root.targetLayer - 1
     root.selectedIndex = -1
+    root.loadArmed = false
+    root.flashArmed = false
     root.syncNameFields()
   }
 
@@ -274,6 +299,7 @@ Panel {
     root.nameRevision = root.nameRevision + 1
     root.loadArmed = false
     root.flashArmed = false
+    root.saveDraft()
   }
 
   function commitLayoutName(text) {
@@ -297,6 +323,7 @@ Panel {
     watchChanges: false
     atomicWrites: true
     printErrors: false
+    onSaveFailed: function() { root.draftSaveFailed = true }
   }
 
   Process {

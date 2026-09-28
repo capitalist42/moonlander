@@ -169,8 +169,6 @@ def classify(key):
     tap, hold, double = _expr(key.get("tap")), _expr(key.get("hold")), _expr(key.get("doubleTap"))
     if tap is None and hold is None and double is None:
         return ("trans",)
-    if double is not None or (tap and hold and hold[0] == "layer" and double is not None):
-        return ("dance", tap, hold, double)
     if double is not None:
         return ("dance", tap, hold, double)
     if tap and hold:

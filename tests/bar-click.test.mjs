@@ -91,20 +91,20 @@ function dismiss(widget) {
   widget.windowOpen = false
 }
 
-test("clicking the bar opens the layout panel", () => {
+test("a left click on the bar chip opens the layout panel, and the shell can close it", () => {
   const source = readFileSync(join(root, "BarWidget.qml"), "utf8")
   const panel = layoutPanel()
   const widget = mountBarWidget(source, panel)
 
-  assert.equal(widget.opened, false)
-  assert.equal(widget.press(LEFT), true)
-  assert.equal(widget.opened, true)
-  assert.equal(panel.opened, true)
+  assert.equal(widget.opened, false, "the chip starts closed")
+  assert.equal(widget.press(LEFT), true, "a left click is handled")
+  assert.equal(widget.opened, true, "the chip reports the panel open")
+  assert.equal(panel.opened, true, "the layout panel is open")
 
   dismiss(widget)
-  assert.equal(panel.opened, false)
-  assert.equal(widget.opened, false)
+  assert.equal(panel.opened, false, "the shell closes the panel through the chip")
+  assert.equal(widget.opened, false, "the chip reports the panel closed")
 
-  assert.equal(widget.press(LEFT), true)
-  assert.equal(widget.opened, true)
+  assert.equal(widget.press(LEFT), true, "the next left click is handled")
+  assert.equal(widget.opened, true, "the next left click opens the panel again")
 })

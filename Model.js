@@ -205,6 +205,53 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value))
 }
 
+var LAYER_OPS = { MO: true, TG: true, TO: true, TT: true, OSL: true, LT: true }
+
+function layerTarget(slot) {
+  if (!slot || slot.layer === null || slot.layer === undefined || slot.layer === "") return null
+  if (typeof slot.layer === "boolean") return null
+  var layer = Number(slot.layer)
+  if (layer !== layer || layer < 0) return null
+  return layer
+}
+
+function retargetSlot(slot, removed) {
+  if (!slot || !LAYER_OPS[slot.code]) return slot
+  var layer = layerTarget(slot)
+  if (layer === null) return slot
+  if (layer === removed) return null
+  if (layer > removed) {
+    var next = clone(slot)
+    next.layer = layer - 1
+    return next
+  }
+  return slot
+}
+
+// Drop one layer and keep the rest pointing at the layers that remain.
+// Layer 0 is the base map and is not removed.
+function removeLayer(layers, index) {
+  if (!layers || index <= 0 || index >= layers.length) return layers
+  var next = []
+  var i
+  for (i = 0; i < layers.length; i++) {
+    if (i === index) continue
+    var layer = clone(layers[i])
+    layer.position = next.length
+    var keys = layer.keys || []
+    var k
+    for (k = 0; k < keys.length; k++) {
+      var key = keys[k]
+      if (!key) continue
+      key.tap = retargetSlot(key.tap, index)
+      key.hold = retargetSlot(key.hold, index)
+      key.doubleTap = retargetSlot(key.doubleTap, index)
+    }
+    next.push(layer)
+  }
+  return next
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     ROWS: ROWS,
@@ -215,6 +262,7 @@ if (typeof module !== "undefined" && module.exports) {
     emptyKey: emptyKey,
     blankLayer: blankLayer,
     layerLabel: layerLabel,
-    clone: clone
+    clone: clone,
+    removeLayer: removeLayer
   }
 }

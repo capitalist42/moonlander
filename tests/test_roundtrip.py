@@ -153,6 +153,7 @@ def main():
 
 class OfficialKeymapRoundTripTest(unittest.TestCase):
     def test_generated_keymap_matches_oryx_semantics(self):
+        """Jal4PQ's generated keymap places the same actions as the official Oryx keymap, including both dual-function keys."""
         main()
 
 
