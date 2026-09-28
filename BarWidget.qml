@@ -21,8 +21,27 @@ BarWidget {
     return decodeURIComponent(url)
   }
 
+  // The shell routes a bar click through this root. findPanelWidget ignores a
+  // widget with no open/close/opened, and KeyboardPanel.close only reaches
+  // the layout when the root itself implements close.
+  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
+
+  function open() {
+    if (panelLoader.item) panelLoader.item.open()
+  }
+
+  function close() {
+    if (panelLoader.item) panelLoader.item.close()
+  }
+
   function togglePanel() {
     if (panelLoader.item) panelLoader.item.toggle()
+  }
+
+  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
+
+  function closeForPopoutSwitch() {
+    if (panelLoader.item) panelLoader.item.closeForPopoutSwitch()
   }
 
   function injectPanel() {
@@ -55,11 +74,11 @@ BarWidget {
   IpcHandler {
     target: "capitalist42.moonlander"
 
-    function open(): void { if (panelLoader.item) panelLoader.item.open() }
-    function close(): void { if (panelLoader.item) panelLoader.item.close() }
+    function open(): void { root.open() }
+    function close(): void { root.close() }
     function toggle(): void { root.togglePanel() }
-    function show(): void { if (panelLoader.item) panelLoader.item.open() }
-    function hide(): void { if (panelLoader.item) panelLoader.item.close() }
+    function show(): void { root.open() }
+    function hide(): void { root.close() }
   }
 
   WidgetButton {
@@ -70,7 +89,9 @@ BarWidget {
     tooltipText: root.connected
       ? (root.unflashed ? "Moonlander layout has unflashed edits" : "Moonlander layout")
       : "Moonlander is not connected"
-    onPressed: function(b) { root.togglePanel() }
+    onPressed: function(b) {
+      if (b === Qt.LeftButton) root.togglePanel()
+    }
 
     Rectangle {
       visible: root.unflashed
