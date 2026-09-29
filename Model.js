@@ -349,6 +349,23 @@ function retargetSlot(slot, removed) {
   return slot
 }
 
+// Drop every action on one key. Labels and glow stay; tap, hold, and double-tap go.
+function clearKey(layers, layerIndex, keyIndex) {
+  if (!layers || layerIndex < 0 || layerIndex >= layers.length) return layers
+  var layer = layers[layerIndex]
+  if (!layer || !layer.keys || keyIndex < 0 || keyIndex >= layer.keys.length) return layers
+  var next = clone(layers)
+  var key = next[layerIndex].keys[keyIndex]
+  if (!key) {
+    next[layerIndex].keys[keyIndex] = emptyKey()
+    return next
+  }
+  key.tap = null
+  key.hold = null
+  key.doubleTap = null
+  return next
+}
+
 // Drop one layer and keep the rest pointing at the layers that remain.
 // Layer 0 is the base map and is not removed.
 function removeLayer(layers, index) {
@@ -387,6 +404,7 @@ if (typeof module !== "undefined" && module.exports) {
     blankLayer: blankLayer,
     layerLabel: layerLabel,
     clone: clone,
-    removeLayer: removeLayer
+    removeLayer: removeLayer,
+    clearKey: clearKey
   }
 }

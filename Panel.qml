@@ -152,9 +152,8 @@ Panel {
   }
 
   function clearSlot() {
-    var key = root.selectedKey
-    if (!key) return
-    key[root.slotName] = null
+    if (root.selectedIndex < 0) return
+    root.layers = Model.clearKey(root.layers, root.layerIndex, root.selectedIndex)
     touch()
   }
 

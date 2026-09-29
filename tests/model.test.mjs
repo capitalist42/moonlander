@@ -185,6 +185,39 @@ test("deleting a layer retargets keys that pointed at it and leaves layer 0 in p
   assert.equal(base.keys[0].tap.layer, 1, "the layers you passed in are left unchanged")
 })
 
+test("clearing a hold-only thumb key removes Super and Alt", () => {
+  const layers = Model.clone(doc.layers)
+  assert.equal(Model.legend(layers[0].keys[35]).main, "Super", "the left thumb key is hold-only Super")
+  assert.equal(Model.slotText(layers[0].keys[35].tap), "", "that Super key has no tap")
+  assert.equal(Model.legend(layers[0].keys[69]).main, "Alt", "the right thumb key is hold-only Alt")
+  assert.equal(Model.slotText(layers[0].keys[69].tap), "", "that Alt key has no tap")
+
+  const left = Model.clearKey(layers, 0, 35)
+  assert.deepEqual(Model.legend(left[0].keys[35]), { main: "", sub: "" }, "Super is gone")
+  assert.equal(left[0].keys[35].hold, null, "the Super hold is removed")
+  assert.equal(Model.legend(layers[0].keys[35]).main, "Super", "the layers passed in stay unchanged")
+
+  const right = Model.clearKey(layers, 0, 69)
+  assert.deepEqual(Model.legend(right[0].keys[69]), { main: "", sub: "" }, "Alt is gone")
+  assert.equal(right[0].keys[69].hold, null, "the Alt hold is removed")
+})
+
+test("clearing a key removes its tap, hold, and double-tap", () => {
+  const layers = Model.clone(doc.layers)
+  const grave = Model.legend(layers[0].keys[27])
+  assert.equal(grave.main, "`", "the grave key starts with a tap")
+  assert.ok(grave.sub.includes("MO1"), "the grave key starts with a hold")
+  assert.ok(grave.sub.includes("2×~"), "the grave key starts with a double-tap")
+
+  const next = Model.clearKey(layers, 0, 27)
+  assert.deepEqual(Model.legend(next[0].keys[27]), { main: "", sub: "" }, "the cleared key has no legend")
+  assert.equal(next[0].keys[27].tap, null, "the tap is removed")
+  assert.equal(next[0].keys[27].hold, null, "the hold is removed")
+  assert.equal(next[0].keys[27].doubleTap, null, "the double-tap is removed")
+  assert.equal(Model.legend(next[0].keys[0]).main, "Esc", "another key on the same layer stays")
+  assert.equal(Model.legend(layers[0].keys[27]).main, "`", "the layers passed in stay unchanged")
+})
+
 test("cloning a layout does not share keys with the original", () => {
   const original = { layers: [{ keys: [{ tap: { code: "KC_A" } }] }] }
   const copied = Model.clone(original)
