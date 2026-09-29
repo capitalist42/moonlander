@@ -171,6 +171,15 @@ class GenerateKeymapTest(unittest.TestCase):
         self.assertIn("#define DUAL_FUNC_0 LT(9, KC_4)", source)
         self.assertNotIn("#define DUAL_FUNC_0 LT(3, KC_F8)", source)
 
+    def test_hold_that_switches_layer_moves_to_that_layer(self):
+        """Holding a key to go to another layer moves there, instead of trying to type the layer action as a key."""
+        source = source_for(filled(
+            tap={"code": "KC_A"},
+            hold={"code": "TO", "layer": 2},
+        ))
+        self.assertIn("layer_move(2);", source)
+        self.assertNotIn("register_code16(TO(2));", source)
+
     def test_keycode_that_is_not_an_identifier_is_rejected(self):
         """A keycode that is not a C identifier is refused before it is pasted into the keymap."""
         with self.assertRaises(SystemExit) as caught:

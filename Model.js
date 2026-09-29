@@ -381,6 +381,38 @@ function emptyKey() {
   return { tap: null, hold: null, doubleTap: null }
 }
 
+var SLOT_NAMES = { tap: true, hold: true, doubleTap: true }
+
+// Replace one slot on one key and return a new layer list. The list passed in
+// stays as it was, so a screen that still holds it does not change underneath.
+function assignSlot(layers, layerIndex, keyIndex, slotName, patch) {
+  if (!layers || !SLOT_NAMES[slotName]) return layers
+  if (layerIndex < 0 || layerIndex >= layers.length) return layers
+  var layer = layers[layerIndex]
+  if (!layer || !layer.keys || keyIndex < 0 || keyIndex >= layer.keys.length) return layers
+  var next = clone(layers)
+  var key = next[layerIndex].keys[keyIndex]
+  if (!key) {
+    key = emptyKey()
+    next[layerIndex].keys[keyIndex] = key
+  }
+  var slot = key[slotName] ? clone(key[slotName]) : { code: "", modifiers: {} }
+  if (!slot.modifiers || typeof slot.modifiers !== "object") slot.modifiers = {}
+  var field
+  for (field in patch) {
+    if (field === "modifiers") {
+      var flags = clone(slot.modifiers)
+      var name
+      for (name in patch.modifiers) flags[name] = !!patch.modifiers[name]
+      slot.modifiers = flags
+    } else {
+      slot[field] = patch[field]
+    }
+  }
+  key[slotName] = slot
+  return next
+}
+
 function blankLayer(title) {
   var keys = []
   var i
@@ -476,6 +508,7 @@ if (typeof module !== "undefined" && module.exports) {
     legend: legend,
     slotText: slotText,
     emptyKey: emptyKey,
+    assignSlot: assignSlot,
     blankLayer: blankLayer,
     layerLabel: layerLabel,
     clone: clone,

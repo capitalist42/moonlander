@@ -270,6 +270,21 @@ test("clearing a key removes its tap, hold, and double-tap", () => {
   assert.equal(Model.legend(layers[0].keys[27]).main, "`", "the layers passed in stay unchanged")
 })
 
+test("assigning a layer switch replaces that slot and leaves the layout passed in unchanged", () => {
+  const layers = Model.clone(doc.layers)
+  const before = JSON.stringify(layers[0].keys[13])
+  const next = Model.assignSlot(layers, 0, 13, "tap", { code: "TO", layer: 2 })
+  assert.equal(JSON.stringify(layers[0].keys[13]), before, "the layout passed in stays unchanged")
+  assert.equal(next[0].keys[13].tap.code, "TO")
+  assert.equal(next[0].keys[13].tap.layer, 2)
+  assert.equal(Model.slotText(next[0].keys[13].tap), "TO2")
+  const held = Model.assignSlot(next, 0, 15, "hold", { code: "TG", layer: 1 })
+  assert.equal(held[0].keys[15].tap.code, "KC_A", "the letter on that key stays")
+  assert.equal(held[0].keys[15].hold.code, "TG")
+  assert.equal(held[0].keys[15].hold.layer, 1)
+  assert.equal(Model.assignSlot(layers, 0, 13, "missing", { code: "TO" }), layers)
+})
+
 test("cloning a layout does not share keys with the original", () => {
   const original = { layers: [{ keys: [{ tap: { code: "KC_A" } }] }] }
   const copied = Model.clone(original)

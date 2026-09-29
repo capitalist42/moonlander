@@ -181,6 +181,8 @@ def classify(key):
             return ("mt", hold[2], tap[1])
         if hold[0] == "layer" and hold[1] == "MO" and plain_tap:
             return ("lt", hold[2], tap[1])
+        if hold[0] == "layer":
+            return ("dual", _as_code(tap), hold)
         return ("dual", _as_code(tap), _as_code(hold))
     if tap and tap[0] == "layer":
         return ("op", f"{tap[1]}({tap[2]})")
@@ -274,6 +276,39 @@ def _assign(layers):
     return tokens, dances, duals, hsvs, uses_rgb_sld, aliases
 
 
+def _layer_statement(op, layer, release):
+    """C statement for pressing or releasing a layer action, or None when the release should leave the layer as it is."""
+    if op in ("MO", "LT"):
+        return f"layer_{'off' if release else 'on'}({layer});"
+    if op == "TT" and release:
+        return f"layer_off({layer});"
+    if release:
+        if op == "OSL":
+            return "clear_oneshot_layer_state(ONESHOT_PRESSED);"
+        return None
+    if op == "TG":
+        return f"layer_invert({layer});"
+    if op == "TO":
+        return f"layer_move({layer});"
+    if op == "OSL":
+        return f"set_oneshot_layer({layer}, ONESHOT_START);"
+    if op == "TT":
+        return f"layer_on({layer});"
+    return f"layer_on({layer});"
+
+
+def _hold_press(hold):
+    if isinstance(hold, tuple) and hold and hold[0] == "layer":
+        return _layer_statement(hold[1], hold[2], False)
+    return f"register_code16({hold or 'KC_NO'});"
+
+
+def _hold_release(hold):
+    if isinstance(hold, tuple) and hold and hold[0] == "layer":
+        return _layer_statement(hold[1], hold[2], True)
+    return f"unregister_code16({hold or 'KC_NO'});"
+
+
 def _dance_fn(index, kind):
     _tag, tap, hold, double = kind
     tap_code = _as_code(tap) or "KC_NO"
@@ -295,7 +330,7 @@ def _dance_fn(index, kind):
         f"        case SINGLE_TAP: register_code16({tap_code}); break;",
     ]
     if hold and hold[0] == "layer":
-        lines.append(f"        case SINGLE_HOLD: layer_on({hold[2]}); break;")
+        lines.append(f"        case SINGLE_HOLD: {_layer_statement(hold[1], hold[2], False)} break;")
     elif hold:
         lines.append(f"        case SINGLE_HOLD: register_code16({_as_code(hold)}); break;")
     if double:
@@ -311,7 +346,9 @@ def _dance_fn(index, kind):
         f"        case SINGLE_TAP: unregister_code16({tap_code}); break;",
     ]
     if hold and hold[0] == "layer":
-        lines.append(f"        case SINGLE_HOLD: layer_off({hold[2]}); break;")
+        release = _layer_statement(hold[1], hold[2], True)
+        if release:
+            lines.append(f"        case SINGLE_HOLD: {release} break;")
     elif hold:
         lines.append(f"        case SINGLE_HOLD: unregister_code16({_as_code(hold)}); break;")
     if double:
@@ -327,9 +364,11 @@ def _dance_fn(index, kind):
 
 
 def _dual_case(index, kind):
-    _tag, tap_code, hold_code = kind
+    _tag, tap_code, hold = kind
     tap_code = tap_code or "KC_NO"
-    hold_code = hold_code or "KC_NO"
+    press = _hold_press(hold)
+    release = _hold_release(hold)
+    release_line = f"          {release}\n" if release else ""
     return f"""    case DUAL_FUNC_{index}:
       if (record->tap.count > 0) {{
         if (record->event.pressed) {{
@@ -339,10 +378,9 @@ def _dual_case(index, kind):
         }}
       }} else {{
         if (record->event.pressed) {{
-          register_code16({hold_code});
+          {press}
         }} else {{
-          unregister_code16({hold_code});
-        }}
+{release_line}        }}
       }}
       return false;
 """

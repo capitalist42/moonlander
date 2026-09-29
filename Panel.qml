@@ -137,48 +137,45 @@ Panel {
     session.flashArmed = false
   }
 
-  function currentSlot() {
-    var key = root.selectedKey
-    if (!key) return null
-    if (!key[root.slotName]) key[root.slotName] = { code: "", modifiers: {} }
-    if (!key[root.slotName].modifiers) key[root.slotName].modifiers = {}
-    return key[root.slotName]
-  }
-
   function modOn(name) {
     var key = root.selectedKey
     if (!key || !key[root.slotName] || !key[root.slotName].modifiers) return false
     return !!key[root.slotName].modifiers[name]
   }
 
+  function writeSlot(patch) {
+    if (!session || root.selectedIndex < 0) return false
+    var next = Model.assignSlot(root.layers, root.layerIndex, root.selectedIndex, root.slotName, patch)
+    if (next === root.layers) return false
+    session.layers = next
+    session.loadArmed = false
+    session.flashArmed = false
+    return true
+  }
+
   function assignCode(code) {
-    var slot = currentSlot()
-    if (!slot) return
-    slot.code = code
-    if (code !== "MO" && code !== "TG" && code !== "TO" && code !== "TT" && code !== "OSL" && code !== "LT") slot.layer = null
-    touch()
+    var patch = { code: code }
+    if (code !== "MO" && code !== "TG" && code !== "TO" && code !== "TT" && code !== "OSL" && code !== "LT") patch.layer = null
+    if (!writeSlot(patch)) return
     root.syncPickers()
   }
 
   function assignLayerOp(op) {
-    var slot = currentSlot()
-    if (!slot) return
-    if (root.targetLayer < 0 || root.targetLayer >= root.layers.length) {
+    var layerNumber = session ? session.targetLayer : 0
+    if (layerNumber < 0 || layerNumber >= root.layers.length) {
       session.status = "Choose a target layer first."
       return
     }
-    slot.code = op
-    slot.layer = root.targetLayer
-    touch()
+    if (!writeSlot({ code: op, layer: layerNumber })) return
     root.syncPickers()
   }
 
   function toggleMod(name) {
-    var slot = currentSlot()
-    if (!slot) return
-    if (!slot.modifiers) slot.modifiers = {}
-    slot.modifiers[name] = !slot.modifiers[name]
-    touch()
+    var key = root.selectedKey
+    var slot = key && key[root.slotName]
+    var flags = {}
+    flags[name] = !(slot && slot.modifiers && slot.modifiers[name])
+    writeSlot({ modifiers: flags })
   }
 
   function clearSlot() {
@@ -325,7 +322,9 @@ Panel {
     if (root.layerIndex < 0 || root.layerIndex >= root.layers.length) return
     var name = String(text || "")
     if (layerTitleAt(root.layerIndex) === name) return
-    root.layers[root.layerIndex].title = name
+    var layers = Model.clone(root.layers)
+    layers[root.layerIndex].title = name
+    session.layers = layers
     session.nameRevision = root.nameRevision + 1
     session.loadArmed = false
     session.flashArmed = false
@@ -534,9 +533,9 @@ Panel {
           }
 
           Board {
-            layers: root.layers
-            layerIndex: root.layerIndex
-            selectedIndex: root.selectedIndex
+            layers: root.session.layers
+            layerIndex: root.session.layerIndex
+            selectedIndex: root.session.selectedIndex
             foreground: root.contentForeground
             accent: Color.accent
             fontFamily: root.contentFontFamily
@@ -620,7 +619,7 @@ Panel {
                 ]
                 Button {
                   required property var modelData
-                  text: modelData[1] + " " + root.targetLayer
+                  text: modelData[1] + " " + root.session.targetLayer
                   fontSize: Style.font.caption
                   foreground: root.contentForeground
                   fontFamily: root.contentFontFamily
@@ -693,7 +692,6 @@ Panel {
                 model: [
                   ["leftCtrl", "Ctrl"], ["rightCtrl", "RCtrl"],
                   ["leftShift", "Shift"], ["rightShift", "RShift"],
-                  ["leftAlt", "Alt"], ["rightAlt", "RAlt"],
                   ["leftGui", "Super"], ["rightGui", "RSuper"]
                 ]
                 Button {
