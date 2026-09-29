@@ -15,12 +15,13 @@ Panel {
 
   property var anchorItem: null
   property var hostWidget: null
+  property var session: null
+  property string banner: ""
+  property bool loadNeedsConfirm: false
 
   readonly property var barIdentity: hostWidget || root
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
-
-  property var session: Session.store()
 
   // These read the shared session. Writes go to session so the other screen
   // sees them; assigning here would keep a private copy.
@@ -67,6 +68,13 @@ Panel {
   onSlotNameChanged: root.syncPickers()
   onLayerIndexChanged: root.syncPickers()
 
+  Component {
+    id: sessionType
+    Session {}
+  }
+
+  Component.onCompleted: root.session = Session.store(sessionType)
+
   function open() {
     root.syncNameFields()
     root.controller.show()
@@ -87,14 +95,31 @@ Panel {
     return false
   }
 
+  function publishLayers(next) {
+    session.layers = next
+    session.revision = session.revision + 1
+  }
+
+  function showStatus(text) {
+    if (session) session.status = text
+    root.banner = text
+  }
+
+  function editsAreUnflashed() {
+    if (!session) return false
+    var snapshot = session.keyboardSnapshot || ""
+    if (snapshot === "") return !session.matchesKeyboard
+    return JSON.stringify(session.layers || []) !== snapshot
+  }
+
   function applyDocument(text) {
     var parsed
     try { parsed = JSON.parse(text) } catch (e) {
-      session.status = "Could not read the layout."
+      root.showStatus("Could not read the layout.")
       return
     }
     session.doc = parsed
-    session.layers = parsed.layers ? Model.clone(parsed.layers) : []
+    publishLayers(parsed.layers ? Model.clone(parsed.layers) : [])
     session.layerIndex = 0
     session.targetLayer = session.layers.length > 1 ? 1 : 0
     session.selectedIndex = -1
@@ -104,10 +129,12 @@ Panel {
     var title = parsed.title || "Moonlander"
     session.layoutTitle = title
     session.connected = !!parsed.connected
+    session.nameRevision = session.nameRevision + 1
+    session.revision = session.revision + 1
     root.syncNameFields()
-    if (parsed.error) session.status = parsed.error
-    else if (parsed.liveError && !parsed.matchesKeyboard) session.status = parsed.liveError
-    else session.status = (parsed.title || "Layout") + "  " + (parsed.layoutId || "") + "/" + (parsed.revisionId || "")
+    if (parsed.error) root.showStatus(parsed.error)
+    else if (parsed.liveError && !parsed.matchesKeyboard) root.showStatus(parsed.liveError)
+    else root.showStatus("Loaded " + (parsed.title || "layout") + "  " + (parsed.layoutId || "") + "/" + (parsed.revisionId || ""))
     root.syncPickers()
   }
 
@@ -132,7 +159,7 @@ Panel {
   }
 
   function touch() {
-    session.layers = Model.clone(root.layers)
+    publishLayers(Model.clone(root.layers))
     session.loadArmed = false
     session.flashArmed = false
   }
@@ -147,7 +174,7 @@ Panel {
     if (!session || root.selectedIndex < 0) return false
     var next = Model.assignSlot(root.layers, root.layerIndex, root.selectedIndex, root.slotName, patch)
     if (next === root.layers) return false
-    session.layers = next
+    publishLayers(next)
     session.loadArmed = false
     session.flashArmed = false
     return true
@@ -180,7 +207,7 @@ Panel {
 
   function clearSlot() {
     if (root.selectedIndex < 0) return
-    session.layers = Model.clearKey(root.layers, root.layerIndex, root.selectedIndex)
+    publishLayers(Model.clearKey(root.layers, root.layerIndex, root.selectedIndex))
     touch()
     root.syncPickers()
   }
@@ -257,13 +284,23 @@ Panel {
   }
 
   function requestLoad() {
-    if (!hostWidget) return
-    if (root.unflashed && !root.loadArmed) {
-      session.loadArmed = true
-      session.status = "Load from keyboard discards unflashed edits. Press Load again."
+    if (!hostWidget || !session) {
+      root.showStatus("The editor is not attached to the bar.")
       return
     }
+    if (root.editsAreUnflashed() && !root.loadNeedsConfirm) {
+      root.loadNeedsConfirm = true
+      session.loadArmed = true
+      root.showStatus("Load from keyboard discards unflashed edits. Press Load again.")
+      return
+    }
+    root.loadNeedsConfirm = false
     session.loadArmed = false
+    if (loadProc.running) {
+      root.showStatus("Already reading the keyboard.")
+      return
+    }
+    root.showStatus("Reading the layout from the keyboard.")
     loadProc.command = ["python3", hostWidget.script("read-layout.py"), "--draft", hostWidget.draftPath, "--force"]
     loadProc.running = true
   }
@@ -277,7 +314,7 @@ Panel {
     var created = Model.blankLayer("Layer " + next.length)
     created.position = next.length
     next.push(created)
-    session.layers = next
+    publishLayers(next)
     session.layerIndex = next.length - 1
     root.syncNameFields()
   }
@@ -289,7 +326,7 @@ Panel {
     }
     var removed = root.layerIndex
     var next = Model.removeLayer(root.layers, removed)
-    session.layers = next
+    publishLayers(next)
     session.layerIndex = Math.max(0, removed - 1)
     if (session.targetLayer === removed) session.targetLayer = Math.max(0, next.length - 1)
     else if (root.targetLayer > removed) session.targetLayer = root.targetLayer - 1
@@ -300,13 +337,15 @@ Panel {
   }
 
   function layerTitleAt(index) {
-    var layer = root.layers && index >= 0 && index < root.layers.length ? root.layers[index] : null
+    var layers = session ? session.layers : null
+    var layer = layers && index >= 0 && index < layers.length ? layers[index] : null
     return layer && layer.title ? String(layer.title) : ""
   }
 
   function layerButtonLabel(index) {
-    var unused = root.nameRevision
-    return Model.layerLabel(root.layers[index], index)
+    var layers = session ? session.layers : null
+    var unused = session ? session.nameRevision : 0
+    return Model.layerLabel(layers && layers[index], index)
   }
 
   // Copy names into the fields without a text binding. A binding that writes
@@ -314,8 +353,10 @@ Panel {
   // and editingFinished fires again.
   function syncNameFields() {
     if (!layoutNameEdit || !layerNameEdit) return
-    layoutNameEdit.text = root.doc && root.doc.title ? String(root.doc.title) : ""
-    layerNameEdit.text = layerTitleAt(root.layerIndex)
+    var doc = session ? session.doc : null
+    var index = session ? session.layerIndex : 0
+    layoutNameEdit.text = doc && doc.title ? String(doc.title) : ""
+    layerNameEdit.text = layerTitleAt(index)
   }
 
   function commitLayerName(text) {
@@ -324,7 +365,7 @@ Panel {
     if (layerTitleAt(root.layerIndex) === name) return
     var layers = Model.clone(root.layers)
     layers[root.layerIndex].title = name
-    session.layers = layers
+    publishLayers(layers)
     session.nameRevision = root.nameRevision + 1
     session.loadArmed = false
     session.flashArmed = false
@@ -360,7 +401,14 @@ Panel {
     stdout: StdioCollector { waitForEnd: true }
     stderr: StdioCollector { waitForEnd: true }
     onExited: function(code) {
-      root.applyDocument(loadProc.stdout.text || "")
+      var text = loadProc.stdout.text || ""
+      if (!text) {
+        var err = (loadProc.stderr.text || "").trim()
+        root.showStatus(err !== "" ? err : "Load from keyboard returned nothing.")
+        return
+      }
+      root.applyDocument(text)
+      if (code !== 0 && root.banner.indexOf("Loaded ") === 0) root.showStatus("Load from keyboard failed.")
     }
   }
 
@@ -454,7 +502,7 @@ Panel {
           Text {
             width: parent.width
             wrapMode: Text.WordWrap
-            text: root.status
+            text: root.banner !== "" ? root.banner : (root.session ? root.session.status : "")
             color: root.contentForeground
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.bodySmall
@@ -483,7 +531,7 @@ Panel {
           Row {
             spacing: Style.space(4)
             Repeater {
-              model: root.layers
+              model: root.session && root.session.revision >= 0 ? root.session.layers : []
               Button {
                 required property var modelData
                 required property int index
@@ -496,6 +544,7 @@ Panel {
                 onClicked: {
                   session.layerIndex = index
                   session.selectedIndex = -1
+                  session.revision = session.revision + 1
                   root.syncNameFields()
                 }
               }
@@ -533,13 +582,16 @@ Panel {
           }
 
           Board {
-            layers: root.session.layers
-            layerIndex: root.session.layerIndex
-            selectedIndex: root.session.selectedIndex
+            layers: root.session && root.session.revision >= 0 ? root.session.layers : []
+            layerIndex: root.session && root.session.revision >= 0 ? root.session.layerIndex : 0
+            selectedIndex: root.session && root.session.revision >= 0 ? root.session.selectedIndex : -1
             foreground: root.contentForeground
             accent: Color.accent
             fontFamily: root.contentFontFamily
-            onKeyClicked: function(index) { session.selectedIndex = index }
+            onKeyClicked: function(index) {
+              session.selectedIndex = index
+              session.revision = session.revision + 1
+            }
           }
 
           Column {
@@ -591,7 +643,7 @@ Panel {
               }
 
               Repeater {
-                model: root.layers
+                model: root.session && root.session.revision >= 0 ? root.session.layers : []
                 Button {
                   required property int index
                   text: String(index)
@@ -600,7 +652,10 @@ Panel {
                   fontFamily: root.contentFontFamily
                   bordered: true
                   active: session.targetLayer === index
-                  onClicked: session.targetLayer = index
+                  onClicked: {
+                    session.targetLayer = index
+                    session.revision = session.revision + 1
+                  }
                 }
               }
             }
@@ -619,7 +674,7 @@ Panel {
                 ]
                 Button {
                   required property var modelData
-                  text: modelData[1] + " " + root.session.targetLayer
+                  text: modelData[1] + " " + (root.session && root.session.revision >= 0 ? root.session.targetLayer : 0)
                   fontSize: Style.font.caption
                   foreground: root.contentForeground
                   fontFamily: root.contentFontFamily
@@ -711,7 +766,7 @@ Panel {
           Row {
             spacing: Style.space(6)
             Button {
-              text: root.loadArmed ? "Load anyway" : "Load from keyboard"
+              text: root.loadNeedsConfirm ? "Load anyway" : "Load from keyboard"
               fontSize: Style.font.caption
               foreground: root.contentForeground
               fontFamily: root.contentFontFamily

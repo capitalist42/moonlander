@@ -3,15 +3,14 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
-import "Session.js" as Session
 
 // Moonlander chip. Click opens the layout editor.
 BarWidget {
   id: root
   moduleName: "capitalist42.moonlander"
 
-  property var session: Session.store()
-  property string layoutTitle: session ? session.layoutTitle : ""
+  property var session: null
+  property string layoutTitle: session && session.layoutTitle ? session.layoutTitle : ""
   property bool unflashed: session ? session.unflashed : false
   property bool connected: session ? session.connected : false
 
@@ -68,6 +67,7 @@ BarWidget {
     visible: false
     onLoaded: {
       root.injectPanel()
+      if (panelLoader.item && panelLoader.item.session) root.session = panelLoader.item.session
       Qt.callLater(root.injectPanel)
       if (panelLoader.item && panelLoader.item.start) panelLoader.item.start()
     }

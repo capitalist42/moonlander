@@ -18,6 +18,7 @@ QtObject {
   property bool flashArmed: false
   property bool restoreArmed: false
   property int nameRevision: 0
+  property int revision: 0
   property bool draftSaveFailed: false
   property string layoutTitle: ""
   property bool unflashed: false

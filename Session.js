@@ -7,14 +7,18 @@
 var object = null
 var loadClaimed = false
 
-function store() {
+function store(component) {
   if (object) return object
-  var component = Qt.createComponent(Qt.resolvedUrl("Session.qml"))
-  if (component.status !== 1) {
-    console.log("Moonlander session: " + component.errorString())
+  var source = component
+  if (!source) {
+    source = Qt.createComponent(Qt.resolvedUrl("Session.qml"))
+  }
+  if (!source || source.status === 2) return null
+  if (source.status !== 1) {
+    console.log("Moonlander session: " + source.errorString())
     return null
   }
-  object = component.createObject(null)
+  object = source.createObject(null)
   return object
 }
 
