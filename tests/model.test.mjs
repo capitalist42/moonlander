@@ -77,9 +77,9 @@ test("key positions follow the Moonlander shape", () => {
   })
 })
 
-test("the key catalog offers letters, function keys, and digits in typing order", () => {
+test("the key catalog offers letters, function keys, digits, and symbols", () => {
   const list = Model.catalog()
-  assert.equal(list.length, 109, "the catalog is the fixed keycode list")
+  assert.equal(list.length, 130, "the catalog is the fixed keycode list")
   assert.ok(list.includes("KC_ESCAPE"), "Escape is offered")
   assert.ok(list.includes("KC_A"), "letters are offered")
   assert.ok(list.includes("KC_Z"), "the alphabet runs through Z")
@@ -87,7 +87,59 @@ test("the key catalog offers letters, function keys, and digits in typing order"
   assert.ok(list.includes("KC_F12"), "function keys run through F12")
   assert.ok(list.includes("KC_0"), "digits are offered")
   assert.ok(list.includes("KC_9"), "digits run through 9")
+  assert.ok(list.includes("KC_EXLM"), "shifted symbols are offered")
+  assert.ok(list.includes("KC_SLASH"), "punctuation is offered")
   assert.equal(list.indexOf("KC_F"), list.indexOf("KC_A") + 5, "letters stay in alphabetical order")
+
+  const seen = {}
+  list.forEach((code) => {
+    assert.equal(seen[code], undefined, code + " is listed once")
+    seen[code] = true
+    assert.ok(Model.groupOf(code), code + " belongs to a picker")
+  })
+})
+
+test("characters, numbers, and symbols each have a picker, and the rest sit in one key list", () => {
+  assert.deepEqual(
+    Model.pickerGroups().map((group) => group.name),
+    ["Character", "Number", "Symbol", "Key"]
+  )
+
+  const characters = Model.pickerOptions("Character")
+  assert.equal(characters.length, 26, "the character picker is the alphabet")
+  assert.equal(characters[0].value, "KC_A")
+  assert.equal(characters[0].label, "A")
+  assert.equal(characters[0].description, "KC_A")
+  assert.equal(characters[16].label, "Q")
+
+  const numbers = Model.pickerOptions("Number")
+  assert.equal(numbers.map((option) => option.label).join(""), "0123456789")
+  assert.equal(numbers[4].value, "KC_4")
+
+  const symbols = Model.pickerOptions("Symbol")
+  assert.equal(symbols[0].label, "`", "symbols start at the grave key")
+  assert.equal(symbols[1].label, "~")
+  const bang = symbols.find((option) => option.value === "KC_EXLM")
+  assert.equal(bang.label, "!")
+  assert.ok(symbols.some((option) => option.value === "KC_DQUO" && option.label === "\""))
+  assert.ok(symbols.some((option) => option.value === "KC_UNDS" && option.label === "_"))
+  assert.ok(symbols.some((option) => option.value === "KC_SLASH" && option.label === "/"))
+
+  const keys = Model.pickerOptions("Key")
+  assert.equal(keys[0].label, "Transparent")
+  assert.equal(keys[1].label, "None")
+  assert.ok(keys.some((option) => option.value === "KC_ESCAPE" && option.label === "Esc"))
+  assert.ok(keys.some((option) => option.value === "KC_F12" && option.label === "F12"))
+  assert.equal(keys.some((option) => option.value === "KC_A"), false, "letters stay in the character picker")
+  assert.equal(keys.some((option) => option.value === "KC_1"), false, "digits stay in the number picker")
+  assert.equal(keys.some((option) => option.value === "KC_MINUS"), false, "punctuation stays in the symbol picker")
+
+  assert.equal(Model.groupOf("KC_Q"), "Character")
+  assert.equal(Model.groupOf("KC_4"), "Number")
+  assert.equal(Model.groupOf("KC_AT"), "Symbol")
+  assert.equal(Model.groupOf("KC_LEFT"), "Key")
+  assert.equal(Model.groupOf("MO"), "")
+  assert.deepEqual(Model.pickerOptions("Missing"), [])
 })
 
 test("a key legend uses the short name, including layer ops and modifiers", () => {

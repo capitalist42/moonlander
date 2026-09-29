@@ -4,6 +4,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "Session.js" as Session
 
 // Layout currently on the Moonlander, plus the draft you are editing.
 Panel {
@@ -19,35 +20,32 @@ Panel {
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
 
-  property var doc: ({})
-  property var layers: []
-  property int layerIndex: 0
-  property int targetLayer: 0
-  property int selectedIndex: -1
-  property string slotName: "tap"
-  property string filterText: ""
-  property string status: ""
-  property string logText: ""
-  property bool busy: false
-  property bool matchesKeyboard: true
-  property string keyboardSnapshot: ""
-  property bool loadArmed: false
-  property bool flashArmed: false
-  property bool restoreArmed: false
-  property int nameRevision: 0
-  property bool draftSaveFailed: false
+  property var session: Session.store()
+
+  // These read the shared session. Writes go to session so the other screen
+  // sees them; assigning here would keep a private copy.
+  readonly property var doc: session ? session.doc : ({})
+  readonly property var layers: session ? session.layers : []
+  readonly property int layerIndex: session ? session.layerIndex : 0
+  readonly property int targetLayer: session ? session.targetLayer : 0
+  readonly property int selectedIndex: session ? session.selectedIndex : -1
+  readonly property string slotName: session ? session.slotName : "tap"
+  readonly property string status: session ? session.status : ""
+  readonly property string logText: session ? session.logText : ""
+  readonly property bool busy: session ? session.busy : false
+  readonly property bool matchesKeyboard: session ? session.matchesKeyboard : true
+  readonly property string keyboardSnapshot: session ? session.keyboardSnapshot : ""
+  readonly property bool loadArmed: session ? session.loadArmed : false
+  readonly property bool flashArmed: session ? session.flashArmed : false
+  readonly property bool restoreArmed: session ? session.restoreArmed : false
+  readonly property int nameRevision: session ? session.nameRevision : 0
+  readonly property bool draftSaveFailed: session ? session.draftSaveFailed : false
 
   readonly property bool unflashed: keyboardSnapshot === "" ? !matchesKeyboard : JSON.stringify(layers) !== keyboardSnapshot
-  readonly property var filteredCodes: {
-    var all = Model.catalog()
-    var query = filterText.toLowerCase()
-    var out = []
-    var i
-    for (i = 0; i < all.length && out.length < 16; i++) {
-      if (query === "" || all[i].toLowerCase().indexOf(query) >= 0) out.push(all[i])
-    }
-    return out
-  }
+  readonly property var characterOptions: Model.pickerOptions("Character")
+  readonly property var numberOptions: Model.pickerOptions("Number")
+  readonly property var symbolOptions: Model.pickerOptions("Symbol")
+  readonly property var keyOptions: Model.pickerOptions("Key")
   readonly property var selectedKey: {
     var layer = layers && layerIndex >= 0 && layerIndex < layers.length ? layers[layerIndex] : null
     if (!layer || !layer.keys || selectedIndex < 0 || selectedIndex >= layer.keys.length) return null
@@ -55,8 +53,19 @@ Panel {
   }
 
   onUnflashedChanged: {
-    if (hostWidget) hostWidget.unflashed = unflashed
+    if (session) session.unflashed = unflashed
   }
+
+  Connections {
+    target: root.session
+    function onDocChanged() { root.syncNameFields() }
+    function onLayerIndexChanged() { root.syncNameFields() }
+    function onNameRevisionChanged() { root.syncNameFields() }
+  }
+
+  onSelectedIndexChanged: root.syncPickers()
+  onSlotNameChanged: root.syncPickers()
+  onLayerIndexChanged: root.syncPickers()
 
   function open() {
     root.syncNameFields()
@@ -81,32 +90,51 @@ Panel {
   function applyDocument(text) {
     var parsed
     try { parsed = JSON.parse(text) } catch (e) {
-      root.status = "Could not read the layout."
+      session.status = "Could not read the layout."
       return
     }
-    root.doc = parsed
-    root.layers = parsed.layers ? Model.clone(parsed.layers) : []
-    root.layerIndex = 0
-    root.targetLayer = root.layers.length > 1 ? 1 : 0
-    root.selectedIndex = -1
-    root.matchesKeyboard = parsed.matchesKeyboard !== false
-    root.keyboardSnapshot = root.matchesKeyboard ? JSON.stringify(root.layers) : ""
-    root.loadArmed = false
+    session.doc = parsed
+    session.layers = parsed.layers ? Model.clone(parsed.layers) : []
+    session.layerIndex = 0
+    session.targetLayer = session.layers.length > 1 ? 1 : 0
+    session.selectedIndex = -1
+    session.matchesKeyboard = parsed.matchesKeyboard !== false
+    session.keyboardSnapshot = session.matchesKeyboard ? JSON.stringify(session.layers) : ""
+    session.loadArmed = false
+    var title = parsed.title || "Moonlander"
+    session.layoutTitle = title
+    session.connected = !!parsed.connected
     root.syncNameFields()
-    if (hostWidget) {
-      hostWidget.layoutTitle = parsed.title || "Moonlander"
-      hostWidget.connected = !!parsed.connected
-      hostWidget.unflashed = !root.matchesKeyboard
-    }
-    if (parsed.error) root.status = parsed.error
-    else if (parsed.liveError && !parsed.matchesKeyboard) root.status = parsed.liveError
-    else root.status = (parsed.title || "Layout") + "  " + (parsed.layoutId || "") + "/" + (parsed.revisionId || "")
+    if (parsed.error) session.status = parsed.error
+    else if (parsed.liveError && !parsed.matchesKeyboard) session.status = parsed.liveError
+    else session.status = (parsed.title || "Layout") + "  " + (parsed.layoutId || "") + "/" + (parsed.revisionId || "")
+    root.syncPickers()
+  }
+
+  function collapsePickers(keep) {
+    if (characterPicker !== keep) characterPicker.expanded = false
+    if (numberPicker !== keep) numberPicker.expanded = false
+    if (symbolPicker !== keep) symbolPicker.expanded = false
+    if (keyPicker !== keep) keyPicker.expanded = false
+  }
+
+  function syncPickers() {
+    if (!characterPicker) return
+    var layer = root.layers && root.layerIndex >= 0 && root.layerIndex < root.layers.length ? root.layers[root.layerIndex] : null
+    var key = layer && layer.keys && root.selectedIndex >= 0 && root.selectedIndex < layer.keys.length ? layer.keys[root.selectedIndex] : null
+    var slot = key ? key[root.slotName] : null
+    var code = slot && slot.code ? String(slot.code) : ""
+    var group = Model.groupOf(code)
+    characterPicker.value = group === "Character" ? code : ""
+    numberPicker.value = group === "Number" ? code : ""
+    symbolPicker.value = group === "Symbol" ? code : ""
+    keyPicker.value = group === "Key" ? code : ""
   }
 
   function touch() {
-    root.layers = Model.clone(root.layers)
-    root.loadArmed = false
-    root.flashArmed = false
+    session.layers = Model.clone(root.layers)
+    session.loadArmed = false
+    session.flashArmed = false
   }
 
   function currentSlot() {
@@ -129,18 +157,20 @@ Panel {
     slot.code = code
     if (code !== "MO" && code !== "TG" && code !== "TO" && code !== "TT" && code !== "OSL" && code !== "LT") slot.layer = null
     touch()
+    root.syncPickers()
   }
 
   function assignLayerOp(op) {
     var slot = currentSlot()
     if (!slot) return
     if (root.targetLayer < 0 || root.targetLayer >= root.layers.length) {
-      root.status = "Choose a target layer first."
+      session.status = "Choose a target layer first."
       return
     }
     slot.code = op
     slot.layer = root.targetLayer
     touch()
+    root.syncPickers()
   }
 
   function toggleMod(name) {
@@ -153,8 +183,9 @@ Panel {
 
   function clearSlot() {
     if (root.selectedIndex < 0) return
-    root.layers = Model.clearKey(root.layers, root.layerIndex, root.selectedIndex)
+    session.layers = Model.clearKey(root.layers, root.layerIndex, root.selectedIndex)
     touch()
+    root.syncPickers()
   }
 
   function writeDraft() {
@@ -165,27 +196,27 @@ Panel {
     // A failed write leaves the new text in FileView's cache, and setText
     // then skips the write. Clear the path so the retry is a real save.
     if (root.draftSaveFailed) draftFile.path = ""
-    root.draftSaveFailed = false
+    session.draftSaveFailed = false
     draftFile.path = hostWidget.draftPath
     draftFile.setText(JSON.stringify(next, null, 2) + "\n")
     draftFile.waitForJob()
     if (root.draftSaveFailed) return false
-    root.doc = next
+    session.doc = next
     return true
   }
 
   function saveDraft() {
     if (!writeDraft()) {
-      if (hostWidget) root.status = "Could not save the draft."
+      if (hostWidget) session.status = "Could not save the draft."
       return
     }
-    root.status = "Saved. The keyboard is unchanged until you flash."
+    session.status = "Saved. The keyboard is unchanged until you flash."
   }
 
   function runTool(proc, args) {
     if (!hostWidget || root.busy) return
-    root.busy = true
-    root.logText = ""
+    session.busy = true
+    session.logText = ""
     proc.command = ["python3", hostWidget.script("flash.py")].concat(args)
     proc.running = true
   }
@@ -193,81 +224,81 @@ Panel {
   function compile() {
     if (!hostWidget || root.busy) return
     if (!writeDraft()) {
-      root.status = "Could not save the draft."
+      session.status = "Could not save the draft."
       return
     }
-    root.status = "Compiling. The first build takes several minutes."
+    session.status = "Compiling. The first build takes several minutes."
     runTool(compileProc, ["compile", "--draft", hostWidget.draftPath])
   }
 
   function requestFlash() {
     if (!root.flashArmed) {
-      root.flashArmed = true
-      root.restoreArmed = false
-      root.status = "Flash overwrites the keyboard. Press Flash again, then the reset pinhole or the Reset key on layer 2."
+      session.flashArmed = true
+      session.restoreArmed = false
+      session.status = "Flash overwrites the keyboard. Press Flash again, then the reset pinhole or the Reset key on layer 2."
       return
     }
-    root.flashArmed = false
+    session.flashArmed = false
     if (!writeDraft()) {
-      root.status = "Could not save the draft."
+      session.status = "Could not save the draft."
       return
     }
-    root.status = "Waiting for the bootloader. Press the reset pinhole and leave the cable in."
+    session.status = "Waiting for the bootloader. Press the reset pinhole and leave the cable in."
     runTool(flashProc, ["flash", "--draft", hostWidget.draftPath, "--yes"])
   }
 
   function requestRestore() {
     if (!root.restoreArmed) {
-      root.restoreArmed = true
-      root.flashArmed = false
-      root.status = "Restore puts revision Jal4PQ back on the board. Press Restore again, then the reset pinhole."
+      session.restoreArmed = true
+      session.flashArmed = false
+      session.status = "Restore puts revision Jal4PQ back on the board. Press Restore again, then the reset pinhole."
       return
     }
-    root.restoreArmed = false
-    root.status = "Waiting for the bootloader to restore Jal4PQ."
+    session.restoreArmed = false
+    session.status = "Waiting for the bootloader to restore Jal4PQ."
     runTool(restoreProc, ["restore", "--yes"])
   }
 
   function requestLoad() {
     if (!hostWidget) return
     if (root.unflashed && !root.loadArmed) {
-      root.loadArmed = true
-      root.status = "Load from keyboard discards unflashed edits. Press Load again."
+      session.loadArmed = true
+      session.status = "Load from keyboard discards unflashed edits. Press Load again."
       return
     }
-    root.loadArmed = false
+    session.loadArmed = false
     loadProc.command = ["python3", hostWidget.script("read-layout.py"), "--draft", hostWidget.draftPath, "--force"]
     loadProc.running = true
   }
 
   function addLayer() {
     if (root.layers.length >= Model.MAX_LAYERS) {
-      root.status = "Eight layers is the maximum for this firmware."
+      session.status = "Eight layers is the maximum for this firmware."
       return
     }
     var next = Model.clone(root.layers)
     var created = Model.blankLayer("Layer " + next.length)
     created.position = next.length
     next.push(created)
-    root.layers = next
-    root.layerIndex = next.length - 1
+    session.layers = next
+    session.layerIndex = next.length - 1
     root.syncNameFields()
   }
 
   function deleteLayer() {
     if (root.layerIndex <= 0) {
-      root.status = "Layer 0 stays."
+      session.status = "Layer 0 stays."
       return
     }
     var removed = root.layerIndex
     var next = Model.removeLayer(root.layers, removed)
-    root.layers = next
-    root.layerIndex = Math.max(0, removed - 1)
-    if (root.targetLayer === removed) root.targetLayer = Math.max(0, next.length - 1)
-    else if (root.targetLayer > removed) root.targetLayer = root.targetLayer - 1
-    root.selectedIndex = -1
-    root.loadArmed = false
-    root.flashArmed = false
+    session.layers = next
+    session.layerIndex = Math.max(0, removed - 1)
+    if (session.targetLayer === removed) session.targetLayer = Math.max(0, next.length - 1)
+    else if (root.targetLayer > removed) session.targetLayer = root.targetLayer - 1
+    session.selectedIndex = -1
+    session.loadArmed = false
+    session.flashArmed = false
     root.syncNameFields()
   }
 
@@ -295,9 +326,9 @@ Panel {
     var name = String(text || "")
     if (layerTitleAt(root.layerIndex) === name) return
     root.layers[root.layerIndex].title = name
-    root.nameRevision = root.nameRevision + 1
-    root.loadArmed = false
-    root.flashArmed = false
+    session.nameRevision = root.nameRevision + 1
+    session.loadArmed = false
+    session.flashArmed = false
     root.saveDraft()
   }
 
@@ -309,10 +340,10 @@ Panel {
     if (name === current) return
     var next = Model.clone(root.doc || {})
     next.title = name
-    root.doc = next
-    if (hostWidget) hostWidget.layoutTitle = name
-    root.loadArmed = false
-    root.flashArmed = false
+    session.doc = next
+    session.layoutTitle = name
+    session.loadArmed = false
+    session.flashArmed = false
     root.saveDraft()
   }
 
@@ -322,7 +353,7 @@ Panel {
     watchChanges: false
     atomicWrites: true
     printErrors: false
-    onSaveFailed: function() { root.draftSaveFailed = true }
+    onSaveFailed: function() { session.draftSaveFailed = true }
   }
 
   Process {
@@ -339,9 +370,9 @@ Panel {
     stdout: StdioCollector { waitForEnd: true }
     stderr: StdioCollector { waitForEnd: true }
     onExited: function(code) {
-      root.busy = false
-      root.logText = ((compileProc.stdout.text || "") + (compileProc.stderr.text || "")).trim()
-      root.status = code === 0 ? "Compile finished. Flash when you are ready." : "Compile failed."
+      session.busy = false
+      session.logText = ((compileProc.stdout.text || "") + (compileProc.stderr.text || "")).trim()
+      session.status = code === 0 ? "Compile finished. Flash when you are ready." : "Compile failed."
     }
   }
 
@@ -350,22 +381,22 @@ Panel {
     stdout: StdioCollector { waitForEnd: true }
     stderr: StdioCollector { waitForEnd: true }
     onExited: function(code) {
-      root.busy = false
-      root.logText = ((flashProc.stdout.text || "") + (flashProc.stderr.text || "")).trim()
+      session.busy = false
+      session.logText = ((flashProc.stdout.text || "") + (flashProc.stderr.text || "")).trim()
       if (code === 0) {
         var hashed = /flashedHash ([0-9a-f]{8})/.exec(root.logText)
         if (hashed) {
           var next = Model.clone(root.doc || {})
           next.flashedHash = hashed[1]
           next.matchesKeyboard = true
-          root.doc = next
+          session.doc = next
         }
-        root.matchesKeyboard = true
-        root.keyboardSnapshot = JSON.stringify(root.layers)
-        if (hostWidget) hostWidget.unflashed = false
-        root.status = "Flashed. The draft is now the record of what is on the keyboard."
+        session.matchesKeyboard = true
+        session.keyboardSnapshot = JSON.stringify(root.layers)
+        session.unflashed = false
+        session.status = "Flashed. The draft is now the record of what is on the keyboard."
       } else {
-        root.status = "Flash failed."
+        session.status = "Flash failed."
       }
     }
   }
@@ -375,14 +406,16 @@ Panel {
     stdout: StdioCollector { waitForEnd: true }
     stderr: StdioCollector { waitForEnd: true }
     onExited: function(code) {
-      root.busy = false
-      root.logText = ((restoreProc.stdout.text || "") + (restoreProc.stderr.text || "")).trim()
-      root.status = code === 0 ? "Restored Jal4PQ. Load from keyboard to pick up the Oryx layout." : "Restore failed."
+      session.busy = false
+      session.logText = ((restoreProc.stdout.text || "") + (restoreProc.stderr.text || "")).trim()
+      session.status = code === 0 ? "Restored Jal4PQ. Load from keyboard to pick up the Oryx layout." : "Restore failed."
     }
   }
 
   function start() {
-    if (!hostWidget || loadProc.running) return
+    if (!hostWidget) return
+    root.syncNameFields()
+    if (loadProc.running || !Session.claimLoad()) return
     loadProc.command = ["python3", hostWidget.script("read-layout.py"), "--draft", hostWidget.draftPath]
     loadProc.running = true
   }
@@ -403,6 +436,7 @@ Panel {
       anchors.fill: parent
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
+      blocked: characterPicker.editing || numberPicker.editing || symbolPicker.editing || keyPicker.editing
 
       Flickable {
         id: scroller
@@ -459,10 +493,10 @@ Panel {
                 foreground: root.contentForeground
                 fontFamily: root.contentFontFamily
                 bordered: true
-                active: root.layerIndex === index
+                active: session.layerIndex === index
                 onClicked: {
-                  root.layerIndex = index
-                  root.selectedIndex = -1
+                  session.layerIndex = index
+                  session.selectedIndex = -1
                   root.syncNameFields()
                 }
               }
@@ -506,7 +540,7 @@ Panel {
             foreground: root.contentForeground
             accent: Color.accent
             fontFamily: root.contentFontFamily
-            onKeyClicked: function(index) { root.selectedIndex = index }
+            onKeyClicked: function(index) { session.selectedIndex = index }
           }
 
           Column {
@@ -532,8 +566,8 @@ Panel {
                   foreground: root.contentForeground
                   fontFamily: root.contentFontFamily
                   bordered: true
-                  active: root.slotName === modelData
-                  onClicked: root.slotName = modelData
+                  active: session.slotName === modelData
+                  onClicked: session.slotName = modelData
                 }
               }
               Button {
@@ -566,8 +600,8 @@ Panel {
                   foreground: root.contentForeground
                   fontFamily: root.contentFontFamily
                   bordered: true
-                  active: root.targetLayer === index
-                  onClicked: root.targetLayer = index
+                  active: session.targetLayer === index
+                  onClicked: session.targetLayer = index
                 }
               }
             }
@@ -596,30 +630,60 @@ Panel {
               }
             }
 
-            TextField {
-              id: filterField
-              width: Style.space(220)
-              placeholderText: "Filter keycodes"
-              foreground: root.contentForeground
-              font.pixelSize: Style.font.caption
-              onTextChanged: root.filterText = text
+            Row {
+              spacing: Style.space(8)
+
+              KeyPicker {
+                id: characterPicker
+                width: Style.space(180)
+                label: "Character"
+                placeholderText: "A–Z"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                accent: Color.accent
+                options: root.characterOptions
+                onChanged: function(code) { root.assignCode(code) }
+                onExpandedChanged: if (expanded) root.collapsePickers(characterPicker)
+              }
+
+              KeyPicker {
+                id: numberPicker
+                width: Style.space(140)
+                label: "Number"
+                placeholderText: "0–9"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                accent: Color.accent
+                options: root.numberOptions
+                onChanged: function(code) { root.assignCode(code) }
+                onExpandedChanged: if (expanded) root.collapsePickers(numberPicker)
+              }
+
+              KeyPicker {
+                id: symbolPicker
+                width: Style.space(160)
+                label: "Symbol"
+                placeholderText: "!@#"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                accent: Color.accent
+                options: root.symbolOptions
+                onChanged: function(code) { root.assignCode(code) }
+                onExpandedChanged: if (expanded) root.collapsePickers(symbolPicker)
+              }
             }
 
-            Flow {
-              width: parent.width
-              spacing: Style.space(4)
-              Repeater {
-                model: root.filteredCodes
-                Button {
-                  required property var modelData
-                  text: Model.slotText({ code: modelData }) || modelData
-                  fontSize: Style.font.caption
-                  foreground: root.contentForeground
-                  fontFamily: root.contentFontFamily
-                  bordered: true
-                  onClicked: root.assignCode(modelData)
-                }
-              }
+            KeyPicker {
+              id: keyPicker
+              width: Style.spacing.searchableDropdownWidth
+              label: "Key"
+              placeholderText: "Choose a key"
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              accent: Color.accent
+              options: root.keyOptions
+              onChanged: function(code) { root.assignCode(code) }
+              onExpandedChanged: if (expanded) root.collapsePickers(keyPicker)
             }
 
             Flow {

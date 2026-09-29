@@ -158,9 +158,11 @@ var SHORT = {
   KC_RBRC: "]",
   KC_SCLN: ";",
   KC_QUOTE: "'",
+  KC_DQUO: "\"",
   KC_COMMA: ",",
   KC_DOT: ".",
   KC_SLASH: "/",
+  KC_UNDS: "_",
   KC_QUES: "?",
   KC_COLN: ":",
   KC_LABK: "<",
@@ -223,12 +225,21 @@ var MOD_LABELS = [
   ["rightGui", "RSuper"]
 ]
 
-var CATALOG = [
+// Punctuation and the shifted glyphs, in typing order. These used to be
+// either missing or buried under the first screen of modifier buttons.
+var SYMBOLS = [
+  "KC_GRAVE", "KC_TILD",
+  "KC_EXLM", "KC_AT", "KC_HASH", "KC_DLR", "KC_PERC", "KC_CIRC", "KC_AMPR", "KC_ASTR", "KC_LPRN", "KC_RPRN",
+  "KC_MINUS", "KC_UNDS", "KC_EQUAL", "KC_PLUS",
+  "KC_LBRC", "KC_LCBR", "KC_RBRC", "KC_RCBR", "KC_BSLS", "KC_PIPE",
+  "KC_SCLN", "KC_COLN", "KC_QUOTE", "KC_DQUO",
+  "KC_COMMA", "KC_LABK", "KC_DOT", "KC_RABK", "KC_SLASH", "KC_QUES"
+]
+
+var KEY_CODES = [
   "KC_TRANSPARENT", "KC_NO", "KC_ESCAPE", "KC_TAB", "KC_ENTER", "KC_SPACE", "KC_BSPC", "KC_DELETE",
   "KC_LEFT_SHIFT", "KC_RIGHT_SHIFT", "KC_LEFT_CTRL", "KC_RIGHT_CTRL", "KC_LEFT_ALT", "KC_RIGHT_ALT",
   "KC_LEFT_GUI", "KC_RIGHT_GUI", "KC_APPLICATION", "KC_CAPS",
-  "KC_GRAVE", "KC_MINUS", "KC_EQUAL", "KC_LBRC", "KC_RBRC", "KC_BSLS", "KC_SCLN", "KC_QUOTE",
-  "KC_COMMA", "KC_DOT", "KC_SLASH",
   "KC_LEFT", "KC_RIGHT", "KC_UP", "KC_DOWN", "KC_HOME", "KC_END", "KC_PGUP", "KC_PGDN",
   "QK_BOOT",
   "KC_MS_UP", "KC_MS_DOWN", "KC_MS_LEFT", "KC_MS_RIGHT", "KC_MS_BTN1", "KC_MS_BTN2",
@@ -238,14 +249,29 @@ var CATALOG = [
   "RGB_TOG", "RGB_MODE_FORWARD", "RGB_VAD", "RGB_VAI", "RGB_HUD", "RGB_HUI", "RGB_SLD", "TOGGLE_LAYER_COLOR"
 ]
 
-function catalog() {
-  var list = CATALOG.slice()
+function letterCodes() {
+  var list = []
   var letter
   for (letter = 0; letter < 26; letter++) list.push("KC_" + String.fromCharCode(65 + letter))
+  return list
+}
+
+function numberCodes() {
+  var list = []
+  var digit
+  for (digit = 0; digit <= 9; digit++) list.push("KC_" + digit)
+  return list
+}
+
+function functionCodes() {
+  var list = []
   var digit
   for (digit = 1; digit <= 12; digit++) list.push("KC_F" + digit)
-  for (digit = 0; digit <= 9; digit++) list.push("KC_" + String(digit === 0 ? 0 : digit))
   return list
+}
+
+function catalog() {
+  return KEY_CODES.concat(letterCodes(), functionCodes(), numberCodes(), SYMBOLS)
 }
 
 function shortCode(code) {
@@ -258,6 +284,52 @@ function shortCode(code) {
     return rest
   }
   return code
+}
+
+function pickerLabel(code) {
+  if (code === "KC_TRANSPARENT") return "Transparent"
+  if (code === "KC_NO") return "None"
+  var text = shortCode(code)
+  return text || code
+}
+
+function pickerOption(code) {
+  return { value: code, label: pickerLabel(code), description: code }
+}
+
+function pickerGroups() {
+  return [
+    { name: "Character", codes: letterCodes() },
+    { name: "Number", codes: numberCodes() },
+    { name: "Symbol", codes: SYMBOLS.slice() },
+    { name: "Key", codes: KEY_CODES.concat(functionCodes()) }
+  ]
+}
+
+function pickerOptions(name) {
+  var groups = pickerGroups()
+  var i
+  var j
+  for (i = 0; i < groups.length; i++) {
+    if (groups[i].name !== name) continue
+    var options = []
+    for (j = 0; j < groups[i].codes.length; j++) options.push(pickerOption(groups[i].codes[j]))
+    return options
+  }
+  return []
+}
+
+function groupOf(code) {
+  var groups = pickerGroups()
+  var i
+  var j
+  for (i = 0; i < groups.length; i++) {
+    var codes = groups[i].codes
+    for (j = 0; j < codes.length; j++) {
+      if (codes[j] === code) return groups[i].name
+    }
+  }
+  return ""
 }
 
 function modifierText(action) {
@@ -398,6 +470,9 @@ if (typeof module !== "undefined" && module.exports) {
     rotatedBounds: rotatedBounds,
     MAX_LAYERS: MAX_LAYERS,
     catalog: catalog,
+    pickerGroups: pickerGroups,
+    pickerOptions: pickerOptions,
+    groupOf: groupOf,
     legend: legend,
     slotText: slotText,
     emptyKey: emptyKey,
